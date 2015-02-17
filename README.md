@@ -1,2 +1,2 @@
-# fbAnalytics
-Python script for Facebook analyze
+# socAnalytics
+Python script for analysis of social networks
