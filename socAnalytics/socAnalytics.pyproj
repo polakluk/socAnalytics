@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>e337cb97-1e5a-4582-a38a-027889c009bd</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>socAnalytics.py</StartupFile>
+    <StartupFile>socanalytics.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -22,7 +22,23 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="socAnalytics.py" />
+    <Compile Include="adapters\fb\fanpage.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="adapters\fb\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="adapters\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="config.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="socanalytics.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="adapters\" />
+    <Folder Include="adapters\fb\" />
   </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
