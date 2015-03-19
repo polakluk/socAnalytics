@@ -34,6 +34,9 @@
     <Compile Include="config.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="db.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="socanalytics.py" />
   </ItemGroup>
   <ItemGroup>

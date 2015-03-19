@@ -2,6 +2,7 @@ class Config:
 
 	# constructor
 	def __init__(self):
+		self.debug = True
 
 		# FB creds
 		self.fb = {}
@@ -11,7 +12,7 @@ class Config:
 
 		# DB creds
 		self.db = {}
-		self.db['file'] = "db.lite"
+		self.db['file'] = "db.sqlite"
 
 		# adapters
 		self.adapter = {}

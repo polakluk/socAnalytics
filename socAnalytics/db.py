@@ -10,10 +10,15 @@ class Db:
 
 
 	# commits data to the DB file
-	def commit(self):
+	def Commit(self):
 		self.conn.commit()
 
 
+	# returns cursor for this connection
+	def GetCursor(self):
+		return self.conn.cursor()
+
+
 	# closes connection to the DB
-	def close(self):
+	def Close(self):
 		self.conn.close()

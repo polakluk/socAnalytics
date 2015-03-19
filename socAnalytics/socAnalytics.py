@@ -8,5 +8,7 @@ currentDb = db.Db(conf.db['file'])
 adapters = adapters.Helper(conf, currentDb)
 
 adapter = adapters.GetAdapter()
+adapters.RunAdapter(adapter)
+adapters.CloseAdapter(adapter)
 
-print('Hello World')
+currentDb.Close()

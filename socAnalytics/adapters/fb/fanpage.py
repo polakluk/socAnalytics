@@ -2,6 +2,9 @@ import facebook
 import time
 import re
 import sqlite3
+import os
+import sys
+from datetime import datetime
 
 class Fanpage:
 	_repeatQuery = 100 # repeat querying for 100times
@@ -13,6 +16,10 @@ class Fanpage:
 		self.graph = None # no graph object initialized so far
 		self.limitRequest = limit # limits the number of requested data
 		self.db = db # current DB connection
+
+		self.process_id = os.getpid()
+		self.job = None # currently selected job
+		self.post = None # currently no post selected
 
 
 	# private method that queries Facebook Graph API directly
@@ -124,27 +131,145 @@ class Fanpage:
 	def _processFunctionLikes(self, data):
 		return data["name"]
 
-	# reads and stores/updates information about the fan page
-	def _readPageData(pageName):
-		conn = sqlite3.connect("db.lite")
-
 
 	# inserts/updates page information in db
-	def _updatePageInformation(self, pageName):
-		conn = sqlite3.connect("db.lite")
-		curs = conn.cursor()
+	def _updatePageInformation(self, page):
+		curs = self.db.GetCursor()
 
-		curs.execute( "SELECT page_id FROM pagea WHERE url = '?'", (pageName) )
+		curs.execute( "SELECT page_id FROM Pages WHERE url = ?", (self.job[1], ) )
 
 		origRow = curs.fetchone()
-		data = [()]
+		pageId = 0
+
+		# update basic info about the page
 		if origRow == None: # this page does not exist in our DB
-			print()
+			data = (page['name'], self.job[1], page['category'])
+			curs.execute("INSERT INTO `Pages` (`name`, `url`, `category`, `last_modified`) VALUES(?,?,CURRENT_TIMESTAMP,?) ", data)
+			pageId = curs.lastrowid
 		else: # this page does exist in our DB
-			print()
-		conn.close()
+			data = (page['name'], self.job[1], page['category'], origRow[0])
+			pageId = origRow[0]
+			curs.execute("UPDATE `Pages` SET `name` = ?, `url` = ?, `category` = ?, `last_modified` = CURRENT_TIMESTAMP WHERE page_id = ?", data)
+
+		# store current statistics about the page
+		talkingAbout = 0
+		if page.has_key("talking_about_count"):
+			talkingAbout = page['talking_about_count']
+		curs.execute("INSERT INTO `PagesInfo` (`page_id`, `likes`, `talking_about`, `created`) VALUES (?,?, ?, CURRENT_TIMESTAMP)", (pageId, page['likes'], talkingAbout) )
+		self.db.Commit()
+
+
+	# find job for this process
+	def _findJob(self):
+		keep_looking = True
+
+		while keep_looking:
+			curs = self.db.GetCursor()
+			curs.execute("SELECT `job_id`, `job_content_id`, `date_from`, `date_to` FROM `Jobs` WHERE `crawler_id` = 0 AND `job_type` = 'fbFanpage' LIMIT 1" )
+			self.job = curs.fetchone()
+
+			if self.job == None: # no job is left for me to work on
+				keep_looking = False
+				break
+
+			if self.config.debug == False:
+				curs.execute("UPDATE Jobs SET crawler_id = ? WHERE crawler_id = 0 AND job_type = 'fbFanpage' AND `job_id` = ?", (self.process_id, self.job[0]))
+			else:
+				self.db.Commit()
+				return True
+
+			self.db.Commit()
+			if curs.rowcount == 1: # found my job
+				return True
+
+		return False
+
+
+	# find post to be crawled for this process
+	def _findPostCrawl(self):
+		keep_looking = True
+
+		while keep_looking:
+			curs = self.db.GetCursor()
+			curs.execute("SELECT `post_id`, `post_fb_id` FROM `PostsCrawler` WHERE `crawler_id` = 0 LIMIT 1" )
+			self.post = curs.fetchone()
+
+			if self.post == None: # no post is left for me to work on
+				keep_looking = False
+				break
+
+			if self.config.debug == False:
+				curs.execute("UPDATE PostsCrawler SET crawler_id = ? WHERE crawler_id = 0 AND `job_id` = ?", (self.process_id, self.post[0]))
+			else:
+				self.db.Commit()
+				return True
+
+			self.db.Commit()
+			if curs.rowcount == 1: # found my post
+				return True
+
+		return False
 
 
 	# this mathod stores list of posts that should be further processed in separate scripts
-	def producePosts(self, pageName, dataTo):
-		self._updatePageInformation(pageName)
+	def ProducePosts(self):
+		if self._findJob(): # try to find job for yourself
+			page = self._queryFacebook(self.job[1])
+			if page == None: # no page was found or couldnt be fetched
+				return
+			self._updatePageInformation(page) # update page information
+
+			# start producing posts for crawling
+			keep_looking = True
+			currentUrl = self.job[1] + "/posts?fields=id&limit="+str(self.config.fb["limit"])
+			while keep_looking:
+				data = self._queryFacebook(currentUrl)
+
+				# store all relevant posts to DB
+				if len(data['data']) > 0:
+					cur = self.db.GetCursor()
+					for row in data['data']: # walk through all posts
+						post_time = self._getTimestamp(row["created_time"])
+						if(post_time > self.job[2]) :
+							print("Loaded post: " + row["id"] + " (" + row["created_time"] + ")" )
+							cur.execute( "INSERT INTO `PostsCrawler` (`crawler_id`, `post_fb_id`, `created`) VALUES( 0, ? , CURRENT_TIMESTAMP) ", (str(row["id"]),) )
+						else: # we loaded the last post so stop here
+							keep_looking = False
+							break
+
+					self.db.Commit()
+
+				currentUrl = data['paging']['next'][32:] # go to the next page as long as you can
+
+
+	# stores fetched post from FB to DB and return its DB ID
+	def _storePostIntoDb(self, post):
+		return 0
+
+	def _storeCommentInDb(self, post_id, comment, parent_id):
+		return 0
+
+	# This method reads posts waiting to be crawled from DB and process them
+	def ProducePost(self):
+		while self._findPostCrawl(): # try to find next post to be crawled
+			post = self._queryFacebook(self.post[1] + "?limit=5")
+			post_id = self._storePostIntoDb(post)
+
+			# fetch all comments
+			comments = self._pageData(self.post[1] + "/comments?limit=" + str(self.config.fb['limit']), self._processFunctionComment)
+			
+			# store them in DB
+			if comments != None and len(comments) > 0:
+				for comment in comments:
+					self._storeCommentInDb(post_id, comment, 0)
+			return
+
+
+	# adds job to DB
+	# format: CWArrow (ID) 20/12/2014 (until date)
+	def AddJob(self ):
+		curs = self.db.GetCursor()
+
+		dataSql = ("fbFanpage", sys.argv[2], int(time.mktime(datetime.strptime(sys.argv[3],'%d/%m/%Y').timetuple())))
+		curs.execute("INSERT INTO `Jobs` (`job_type`, `job_content_id`, `date_from`, `date_to`, `crawler_id`) VALUES(?,?, ?,CURRENT_TIMESTAMP,0) ", dataSql)
+		self.db.Commit()
