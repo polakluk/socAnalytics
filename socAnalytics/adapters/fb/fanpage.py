@@ -57,6 +57,10 @@ class Fanpage:
 		return hashes
 
 
+	def _removeNonAscii(self, txt):
+		return ''.join([c if ord(c) < 128 else '' for c in txt])
+
+
 	# return list of tags for this object
 	def _getObjectTags(self, obj, tags_key):
 		if obj.has_key(tags_key) and len(obj[tags_key]) > 0:
@@ -66,7 +70,8 @@ class Fanpage:
 				for val in values:
 					for idx in range(0, len(val)):
 						current_obj = val[idx]
-						res.append((current_obj['name'], current_obj['type']))
+						if current_obj.has_key('name') and current_obj.has_key('type'):
+							res.append((current_obj['name'], current_obj['type']))
 
 				return res
 			else:		
@@ -198,11 +203,7 @@ class Fanpage:
 				keep_looking = False
 				break
 
-			if self.config.debug == False:
-				curs.execute("UPDATE PostsCrawler SET crawler_id = ? WHERE crawler_id = 0 AND `job_id` = ?", (self.process_id, self.post[0]))
-			else:
-				self.db.Commit()
-				return True
+			curs.execute("UPDATE PostsCrawler SET crawler_id = ? WHERE crawler_id = 0 AND `post_id` = ?", (self.process_id, self.post[0]))
 
 			self.db.Commit()
 			if curs.rowcount == 1: # found my post
@@ -244,25 +245,94 @@ class Fanpage:
 
 	# stores fetched post from FB to DB and return its DB ID
 	def _storePostIntoDb(self, post):
-		return 0
+		postId = None
+		msg = ""
+		tags = ""
+		objId = ""
+		shares = 0
+		if post.has_key( 'message' ):
+			msg = post['message']
+			tags = self._getObjectTags(post, "message_tags")
+		else:
+			if post.has_key( 'story' ):
+				msg = post['story']
+				tags = self._getObjectTags(post, "story_tags")
+			else:
+				return postId
 
+		if post.has_key("object_id"):
+			objId = post["object_id"]
+		else:
+			if post.has_key('id'):
+				objId = post['id']		
+		if post.has_key('shares'):
+			shares =  post['shares']['count']
+
+		created_fb = self._getTimestamp(post["created_time"])
+		data = (str(objId), str(self._removeNonAscii(msg)), shares, str(post["type"]), ",".join([ self._removeNonAscii(tag[0])+"|"+tag[1] for tag in tags ]), created_fb)
+		curr = self.db.GetCursor()
+		curr.execute("INSERT INTO `Posts` (`post_fb_id`, `msg`, `likes`, `comments`, `shares`, `type`, `tags`, `created`, `created_fb`) VALUES( ?, ?, 0, 0, ?, ?, ?, CURRENT_TIMESTAMP, ?)", data)
+		postId = curr.lastrowid
+
+		self.db.Commit()
+
+		return postId
+
+
+	# this method stores a comment into DB and keeps parent-child relationshop for when it is necessarry
 	def _storeCommentInDb(self, post_id, comment, parent_id):
-		return 0
+		commentId = None
+		msg = ""
+		tags = ""
+		objId = ""
+		shares = 0
+		if post.has_key( 'message' ):
+			msg = post['message']
+			tags = self._getObjectTags(post, "message_tags")
+		else:
+			if post.has_key( 'story' ):
+				msg = post['story']
+				tags = self._getObjectTags(post, "story_tags")
+			else:
+				return postId
+
+		if post.has_key("object_id"):
+			objId = post["object_id"]
+		else:
+			if post.has_key('id'):
+				objId = post['id']		
+		if post.has_key('shares'):
+			shares =  post['shares']['count']
+
+		created_fb = self._getObjectTags(post["created_time"])
+		data = (str(objId), str(msg), shares, str(post["type"]), tags, created_fb)
+		curr = self.db.GetCursor()
+		curr.execute("INSERT INTO `Posts` (`post_fb_id`, `msg`, `likes`, `comments`, `shares`, `type`, `tags`, `created`, `created_fb`) VALUES( ?, ?, 0, 0, ?, ?, ?, CURRENT_TIMESTAMP, ?)", data)
+		postId = curr.lastrowid
+
+		self.db.Commit()
+
+		return commentId
+
 
 	# This method reads posts waiting to be crawled from DB and process them
 	def ProducePost(self):
 		while self._findPostCrawl(): # try to find next post to be crawled
+			print("Crawling: "+self.post[1])
+
 			post = self._queryFacebook(self.post[1] + "?limit=5")
 			post_id = self._storePostIntoDb(post)
 
+			if post_id == None: # could not fetch the post so skip it
+				continue
+
 			# fetch all comments
-			comments = self._pageData(self.post[1] + "/comments?limit=" + str(self.config.fb['limit']), self._processFunctionComment)
+#			comments = self._pageData(self.post[1] + "/comments?limit=" + str(self.config.fb['limit']), self._processFunctionComment)
 			
-			# store them in DB
-			if comments != None and len(comments) > 0:
-				for comment in comments:
-					self._storeCommentInDb(post_id, comment, 0)
-			return
+#			# store them in DB
+#			if comments != None and len(comments) > 0:
+#				for comment in comments:
+#					self._storeCommentInDb(post_id, comment, 0)
 
 
 	# adds job to DB

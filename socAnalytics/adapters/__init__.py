@@ -35,7 +35,8 @@ class Helper:
 	def RunAdapter(self, adapt):
 		modes = {
 			'--producent' : adapt.ProducePosts,
-			'--addJob' : adapt.AddJob
+			'--addJob' : adapt.AddJob,
+			'--crawler' : adapt.ProducePost
 			}
 
 		if sys.argv[1] in modes.keys():
