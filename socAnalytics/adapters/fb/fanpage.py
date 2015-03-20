@@ -112,10 +112,10 @@ class Fanpage:
 	def _processFunctionCommentItself(self, comment):
 		return {
 			"created" : self._getTimestamp(comment['created_time']),
-			"message" : comment['message'],
+			"message" : self._removeNonAscii(comment['message']),
 			"id" : str(comment["id"]),
 			"from" : comment["from"]["id"],
-			"name" : comment["from"]["name"],
+			"name" : self._removeNonAscii(comment["from"]["name"]),
 			"likes" : comment["like_count"],
 			"hashes" : self._getHashTags(comment['message']),
 			"tags" : self._getObjectTags(comment, "message_tags"),
@@ -126,7 +126,7 @@ class Fanpage:
 	# process function for paging through comments 
 	def _processFunctionComment(self, data):
 		res = self._processFunctionCommentItself(data)
-		currentInnerUrl = res["id"] + "/comments?limit="+self.limitRequest
+		currentInnerUrl = res["id"] + "/comments?limit="+str(self.limitRequest)
 
 		res["comments"] = self._pageData(currentInnerUrl, self._processFunctionCommentItself) # get all replies to this comment
 		return res
@@ -222,7 +222,7 @@ class Fanpage:
 
 			# start producing posts for crawling
 			keep_looking = True
-			currentUrl = self.job[1] + "/posts?fields=id&limit="+str(self.config.fb["limit"])
+			currentUrl = self.job[1] + "/posts?fields=id&limit="+str(self.limitRequest)
 			while keep_looking:
 				data = self._queryFacebook(currentUrl)
 
@@ -282,44 +282,31 @@ class Fanpage:
 	# this method stores a comment into DB and keeps parent-child relationshop for when it is necessarry
 	def _storeCommentInDb(self, post_id, comment, parent_id):
 		commentId = None
-		msg = ""
 		tags = ""
-		objId = ""
-		shares = 0
-		if post.has_key( 'message' ):
-			msg = post['message']
-			tags = self._getObjectTags(post, "message_tags")
-		else:
-			if post.has_key( 'story' ):
-				msg = post['story']
-				tags = self._getObjectTags(post, "story_tags")
-			else:
-				return postId
+		hashes = ""
 
-		if post.has_key("object_id"):
-			objId = post["object_id"]
-		else:
-			if post.has_key('id'):
-				objId = post['id']		
-		if post.has_key('shares'):
-			shares =  post['shares']['count']
+		if len(comment['hashes']) > 0:
+			hashes = "|".join(comment['hashes'])
 
-		created_fb = self._getObjectTags(post["created_time"])
-		data = (str(objId), str(msg), shares, str(post["type"]), tags, created_fb)
+		if len(comment['tags']) > 0:
+			tags = "|".join([ self._removeNonAscii(tag[0])+"|"+tag[1] for tag in comment['tags'] ])
+
+		data = (comment['id'], parent_id, post_id, comment['name'], comment['from'], str(comment['likes']), comment['message'], tags, hashes)
+
 		curr = self.db.GetCursor()
-		curr.execute("INSERT INTO `Posts` (`post_fb_id`, `msg`, `likes`, `comments`, `shares`, `type`, `tags`, `created`, `created_fb`) VALUES( ?, ?, 0, 0, ?, ?, ?, CURRENT_TIMESTAMP, ?)", data)
-		postId = curr.lastrowid
+		curr.execute("INSERT INTO `Comments` (`comment_fb_id`, `parent_id`, `post_id`, `author_name`, `author_id`, `likes`, `msg`, `tags`, `hashes`, `created`) VALUES( ?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)", data)
+		commentId = curr.lastrowid
 
 		self.db.Commit()
 
-		return commentId
+		if len(comment['comments']) > 0:
+			for comm_nested in comment["comments"]:
+				self._storeCommentInDb(post_id, comm_nested, commentId)
 
 
 	# This method reads posts waiting to be crawled from DB and process them
 	def ProducePost(self):
 		while self._findPostCrawl(): # try to find next post to be crawled
-			print("Crawling: "+self.post[1])
-
 			post = self._queryFacebook(self.post[1] + "?limit=5")
 			post_id = self._storePostIntoDb(post)
 
@@ -327,12 +314,16 @@ class Fanpage:
 				continue
 
 			# fetch all comments
-#			comments = self._pageData(self.post[1] + "/comments?limit=" + str(self.config.fb['limit']), self._processFunctionComment)
+			print("Reading comments: "+self.post[1])
+			comments = self._pageData(self.post[1] + "/comments?limit=" + str(self.limitRequest), self._processFunctionComment)
+			print("Finished reading comments: "+self.post[1])
 			
 #			# store them in DB
-#			if comments != None and len(comments) > 0:
-#				for comment in comments:
-#					self._storeCommentInDb(post_id, comment, 0)
+			if comments != None and len(comments) > 0:
+				for comment in comments:
+					self._storeCommentInDb(post_id, comment, 0)
+			print("Finished storing: "+self.post[1])
+
 
 
 	# adds job to DB
