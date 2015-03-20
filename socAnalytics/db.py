@@ -6,7 +6,7 @@ class Db:
 	# opens a connection to a file with SQLite3 DB
 	def __init__(self, f):
 		self.db_file = f
-		self.conn = sqlite3.connect(self.db_file)
+		self.conn = sqlite3.connect(self.db_file, timeout = 30)
 
 
 	# commits data to the DB file
